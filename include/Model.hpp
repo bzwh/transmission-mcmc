@@ -45,6 +45,7 @@ public:
   int n_ii;                               /// number of infecteds - inoc+successful contacts
   int n_ti;                               /// number infection times (n_l - #inoc ?) to infer
   int exend;                              /// length of experiment
+  double orsel_delay;                     /// Intro delay for first challenge. Orsel default =1.0
   std::vector<int> bflags;                /// number of pens in each room
   std::vector<int> cflags;                /// indicates C2 challenge (orsel pigs)
   std::vector<int> id_allinf;   /// all infecteds. for lat * infectious periods. size n_l - rescaled to n_a
@@ -68,7 +69,8 @@ public:
   std::vector<double> prior_infk; /// shape and scale of gamma infectious shape
   std::vector<double> prior_infm; /// shape and scale of gamma infectious mean
   std::vector<double> prior_beta; /// shape and scale of gamma transmission parameter
-  int perr_flag;
+  double perr_flag;
+  double lerr_flag;
 
   // Time infected
   Eigen::VectorXd tInf;     /// Time infected for all animals. 0 for inocs.

@@ -16,7 +16,6 @@ public:
   int acceptreject();
   void scalefactor(int,double);
   void update_mucov(int);
-  void updcov(int,int);
 
   Model model;              /// Black box, give it par vector and get back logprior and loglik
   int n_accd;               /// Counter for acceptance
@@ -34,7 +33,6 @@ public:
   Eigen::VectorXd mu_new;   /// Current means
   Eigen::MatrixXd cov;      /// Variance-covariance matrix of all parameters (empirical)
   Eigen::MatrixXd cov_prop; /// Adapted variance-covariance matrix (rescaled by sd)
-  Eigen::MatrixXd cov_test;
   double lhood_old;         /// Old log-likelihood
   double prior_old;         /// Old log-prior
   double lhood_new;         /// Current log-likelihood

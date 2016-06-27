@@ -61,9 +61,8 @@ Chain::Chain(int nb,int ns,int nt,int cno,int mf,int df)  {
   par_new = VectorXd::Zero(npar);
   mu_old = par_old;
   mu_new = VectorXd::Zero(npar);
-  cov = 1.0e-2*MatrixXd::Identity(npar,npar);
-  cov_prop = 1.0e-2*MatrixXd::Identity(npar,npar);
-  cov_test = MatrixXd::Zero(npar,npar);
+  cov = 1.0e-3*MatrixXd::Identity(npar,npar);
+  cov_prop = 1.0e-3*MatrixXd::Identity(npar,npar);
 
   logdmp.open(model.opath+"logdmp_"+to_string((long long)df)+"_"+ to_string((long long)cno)+".txt");
 }
@@ -87,12 +86,8 @@ void Chain::run()  {
     /* UPDATE */
     if (accpd)  {
       ++n_accd;
-      //updcov(i,accpd);
-    }
-    update_mucov(i);
-
-    // Update chain
-    if (accpd)  {
+      update_mucov(i);
+      /* update chain */
       par_old = par_new;
       prior_old = prior_new;
       lhood_old = lhood_new;
@@ -102,11 +97,13 @@ void Chain::run()  {
     scalefactor(i,arate);
     /* OUTPUT */
     if (i%n_thin==0)  {
+      //model.write(par_old,prior_old,lhood_old);
+      //if (i<n_burn) model.writeburn(par_old);
       (i<n_burn) ? model.writeburn(par_old)                   // Still warming up
                  : model.write(par_old,prior_old,lhood_old);  // Real thing
     }
     if (i==n_burn)  { // finished adapting
-      out_cov << cov << "\n\n" << flush;
+      out_cov << cov/sd << "\n\n" << flush;
       model.out_brn.close();
     }
     logstream << "Chain: " << cno << "-" << to_string((long long) (i+1)) << "\t"
@@ -133,16 +130,13 @@ void Chain::run()  {
  * \return void
  */
 void Chain::gen(int n)  {  // FIXME separate the non-infecteds too
-  if ((n<=n_burn)&&(n<=2*npar||n_accd==0))  {
-  //if (n<n_burn/2)  {
+  if ((n<=n_burn)&&(n<=2*npar||n_accd==0))  { // FIXME conditions....
     // still burning, not many accepted
     cov_prop = 1.0e-3*MatrixXd::Identity(npar,npar);
   }
   else  {
     // Now using empirical cov matrix
-    //cov_prop = cov_test;
-    cov_prop = cov;
-    //cov_prop = (0.01/double(npar))*MatrixXd::Identity(npar,npar);
+    cov_prop = sd*(cov+0.001*MatrixXd::Identity(npar,npar));
   }
   // Generation - gsl providing ugaussian samples, eigen making multinormal
   par_new = par_old+mgen(cov_prop,r);   // multivariate normal proposal
@@ -181,12 +175,11 @@ int Chain::acceptreject()  {
  * \return void
  */
 void Chain::update_mucov(int n)  {
-  //if (n_accd==1)  { // First accepted set, init mean and cov for iterative updates later
-  if (n==1)  { // First accepted set, init mean and cov for iterative updates later
+  if (n_accd==1)  { // First accepted set, init mean and cov for iterative updates later
+  //if (n==1)  { // First accepted set, init mean and cov for iterative updates later
     mu_new = (par_old+par_new)*0.5;
-    cov = sd* ((par_old-mu_new)*(par_old+mu_new).transpose()
-              +(par_new-mu_new)*(par_new+mu_new).transpose()
-              + 1.0e-3*MatrixXd::Identity(npar,npar));
+    cov = ((par_old-mu_new)*((par_old+mu_new).transpose())
+             +(par_new-mu_new)*((par_new+mu_new).transpose()));
   }
   else if ((n<=n_burn)&&(n_accd>1))  {
     mu_old = mu_new;
@@ -194,46 +187,12 @@ void Chain::update_mucov(int n)  {
     mu_new = (n_accd*mu_old + par_new)/double(n_accd+1.0);
     // Update covariance
     cov = ((n_accd-1.0)*cov
-        + sd*((n_accd*mu_old*mu_old.transpose()-(n_accd+1.0)*mu_new*mu_new.transpose())
-        + par_new*par_new.transpose() + 1.0e-3*MatrixXd::Identity(npar,npar)))
+        + ((n_accd*mu_old*mu_old.transpose()-(n_accd+1.0)*mu_new*mu_new.transpose())
+        + par_new*par_new.transpose()))
         / double(n_accd);
   }
-}
-
-
-/** \brief Hohum. Not so greedy... but wtactualf?
- * \param n int
- * \param a int
- * \return void
- */
-void Chain::updcov(int n,int a)  {
-  // Update chain
-  if (a)  {
-    par_old = par_new;
-    prior_old = prior_new;
-    lhood_old = lhood_new;
-  } // else par_old==X_t stays put for next step
-  if (n==1)  { // First accepted set, init mean and cov for iterative updates later
-    mu_new = (mu_old+par_old)*0.5;
-    cov_test = sd*( par_old*par_old.transpose()+par_new*par_new.transpose()
-                   -2.0*mu_new*mu_new.transpose() );
-    ncov = 2;
-  }
-  else if (n<n_burn/2)  {
-    ++ncov;
-    mu_old = mu_new;
-    mu_new = (ncov*mu_old + par_old)/double(ncov+1.0);
-    cov_test = ( (ncov-1.0)*cov_test+sd*
-      (ncov*mu_old*mu_old.transpose()-(ncov+1.0)*mu_new*mu_new.transpose()+par_old*par_old.transpose()) )
-                 /double(ncov);
-  }
-  else if (n<n_burn)  {
-    ++ncov;
-    mu_old = mu_new;
-    mu_new = (n*mu_old + par_old)/double(n+1.0);
-    cov_test = ( (ncov-1.0)*cov_test+sd*
-      (ncov*mu_old*mu_old.transpose()-(ncov+1.0)*mu_new*mu_new.transpose()+par_old*par_old.transpose()) )
-                 /double(ncov);
+  else {
+    // finished burning
   }
 }
 
@@ -247,10 +206,10 @@ void Chain::updcov(int n,int a)  {
 void Chain::scalefactor(int i,double arate)  {
   if((i<n_burn)&&(i%100==0))  {
     if (arate<0.2)  {
-      sd = max(0.002,sd*0.5);      // asfv-pigs ~ 0.02
+      sd = max(0.0000002,sd*0.5);      // asfv-pigs ~ 0.02
     }
     else if (arate>0.4)  {
-      sd = min(1.0,sd*2.0);
+      sd = min(100.0,sd*2.0);
     }
   }
   else  {

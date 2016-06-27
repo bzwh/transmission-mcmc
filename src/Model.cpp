@@ -12,8 +12,6 @@
 
 #include "Model.hpp"
 
-// Set to day when inocs introduced to susc
-#define ORSELHACK 1.0
 #define TEST_FLAG 1
 
 const double EPSILON = std::numeric_limits<double>::epsilon();
@@ -44,6 +42,7 @@ Model::Model()  {
   n_l = 0;
   n_ii = 0;
   n_ti = 0;
+  orsel_delay = 1.0;
 }
 
 void Model::setup(int cno,int mf,int df)  {
@@ -55,24 +54,28 @@ void Model::setup(int cno,int mf,int df)  {
 
 
 void Model::setfns(int cno,int df)  {
-  const int species_flag = 2;
+  const int species_flag = 0;
   switch (species_flag)  {
     case 0:
-      dname = "./input/fmdv-sheep/ChallengeData_sheep.txt";
-      pname = "./input/fmdv-sheep/priors_fmdsheep.txt";
-      opath = "./outputs/fmd_sheep1/";
+      dname = "./input/fmd-sheep/ChallengeData_sheep.txt";
+      pname = "./input/fmd-sheep/priors_fmdsheep.txt";
+      opath = "./outputs/fmd_sheep/";
       break;
 
     case 1:
-      dname = "./input/ChallengeDataPigs-exp1.txt";
-      pname = "./input/priors_fmdv_pigs.txt";
+      //dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
+      //dname = "./input/fmd-pigs/exp2-challenge_only.txt";
+      #define PIGHACK 1
+      dname = "./input/fmd-pigs/ChallengeDataPigs-exp2.txt";
+      pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
       opath = "./outputs/fmd_pigs/";
       break;
 
     case 2:
-      dname = "./input/asfv-ppc/ASFVChallengeData.txt";
-      pname = "./input/asfv-ppc/priors_asf.txt";
+      dname = "./input/asf-ppc/ASFVChallengeData.txt";
+      pname = "./input/asf-ppc/priors_asf.txt";
       opath = "./outputs/asf_pigs/";
+      orsel_delay = 0.0;
       break;
 
     default:
@@ -159,7 +162,7 @@ void Model::load_data()  {
       }
     }
     else  {
-      tMove[room] = ORSELHACK;
+      tMove[room] = orsel_delay;
     }
   }
   // tI, E, lat (k mu), inf (k mu), beta (B W?)
@@ -227,10 +230,9 @@ void Model::load_priors()  {
  */
 VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  {
   int init_counter = 0;
-  int give_up = 1000000; // Really shouldn't struggle this bad
+  int give_up = 1000; // Really shouldn't struggle this bad
   // FIXME hardcoded... wide enough for all data sets?
   // Uniform bounds on initial infection times
-  double timin = ORSELHACK;
   /*vector<double> shp_l = {0.0,25.0};
   vector<double> mue_l = {0.0,10.0};
   vector<double> shp_i = {0.0,25.0};
@@ -238,9 +240,9 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
   vector<double> bt = {0.0,25.0};      // uniform bounds on transmission parameter parameters
   */
   vector<double> shp_l = {0.0,5.0};
-  vector<double> mue_l = {0.0,10.0};
-  vector<double> shp_i = {0.0,25.0};
-  vector<double> mue_i = {0.0,15.0};
+  vector<double> mue_l = {0.0,2.0};
+  vector<double> shp_i = {0.0,5.0};
+  vector<double> mue_i = {0.0,10.0};
   vector<double> bt = {0.0,5.0};
   /*vector<double> shp_l = {0.0,2.5};
   vector<double> mue_l = {0.0,2.5};
@@ -248,6 +250,7 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
   vector<double> mue_i = {0.0,10.0};
   vector<double> bt = {0.0,10.0};      // uniform bounds on transmission parameter parameters. shouldnt be the same...
 */
+  // FIXME Shouldn't initialise storage - move to setup. Keep purely for chain.
   // Nuisance parameter storage
   tInf = VectorXd::Zero(n_a);     // Infection times
   tinfS = VectorXd::Zero(n_ti);
@@ -265,10 +268,8 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
   while (isinf(loglik))  {
     logprr = std::numeric_limits<double>::infinity();
     while (isinf(logprr))  { // separate this to gen
-      // FIXME Rewrite initial sample to be gen'd directly in to par_old and parse()
       ++init_counter;
-      // Initial infection times
-      // FIXME Shouldn't initialise storage - move to setup. Keep purely for chain.
+      /* Initial infection times  */
       tInf.fill(0.0);
       tinfS.fill(0.0);
       int it_tinf = 0;
@@ -291,26 +292,29 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
 
             case 2:
               // Contact transmission (pen1)
-              tInf[i] = timin+gsl_rng_uniform(r)*(tPos[i]-timin);
+              tInf[i] = gsl_ran_flat(r,tNeg[i],tPos[i]);  // [SG]
+              //tInf[i] = orsel_delay+gsl_rng_uniform(r)*(tPos[i]-orsel_delay)*0.5;
               tinfS[it_tinf++] = tInf[i];
             break;
 
             case 3:
               // Contact transmission (pen2)
-              tInf[i] = timin+gsl_rng_uniform(r)*(tPos[i]-timin);
+              tInf[i] = gsl_ran_flat(r,tNeg[i],tPos[i]);  // [SG]
+              //tInf[i] = orsel_delay+gsl_rng_uniform(r)*(tPos[i]-orsel_delay)*0.5;
               tinfS[it_tinf++] = tInf[i];
             break;
 
             case 4:
               // Contact transmission (challenge2)
-              tInf[i] = tMove[rooms[i]]+gsl_rng_uniform(r)*(tPos[i]-tMove[rooms[i]]); // FIXME - C2 pigs?
+              tInf[i] = gsl_ran_flat(r,tMove[rooms[i]],tPos[i]);  // [SG]
+              //tInf[i] = tMove[rooms[i]]+gsl_rng_uniform(r)*(tPos[i]-tMove[rooms[i]])*0.5; // FIXME - C2 pigs?
               tinfS[it_tinf++] = tInf[i];
             break;
           }
         }
       }
 
-      // Sample initial latent period durations
+      /* Sample initial latent period durations */
       lat_P.fill(0.0);
       lat_pS.fill(0.0);
       int it_lat = 0;
@@ -325,31 +329,19 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
               exit(-1);
               break;
             case 1:
-              lat_P[i] = tNeg[i]+gsl_rng_uniform(r)*(tPos[i]-tNeg[i]);
+              lat_P[i] = gsl_rng_uniform(r)*(tPos[i]);
               lat_pS[it_lat++] = lat_P[i];
               break;
-            case 2:
-              lat_P[i] = (tInf[i]>tNeg[i]) ? gsl_rng_uniform(r)*(tPos[i]-tInf[i])
-                                           : tNeg[i]-tInf[i] + gsl_rng_uniform(r)*(tPos[i]-tNeg[i]);
+            default:
+              lat_P[i] = (tInf[i]>tNeg[i]) ? gsl_ran_flat(r,tInf[i],tPos[i])-tInf[i]
+                                           : gsl_ran_flat(r,0.0,tPos[i]-tInf[i]);
               lat_pS[it_lat++] = lat_P[i];
-              break;
-            case 3:
-              lat_P[i] = (tInf[i]>tNeg[i]) ? gsl_rng_uniform(r)*(tPos[i]-tInf[i])
-                                           : tNeg[i]-tInf[i] + gsl_rng_uniform(r)*(tPos[i]-tNeg[i]);
-              lat_pS[it_lat++] = lat_P[i];
-              break;
-            case 4:
-              lat_P[i] = (tInf[i]>tNeg[i]) ? gsl_rng_uniform(r)*(tPos[i]-tInf[i])
-                                           : tNeg[i]-tInf[i] + gsl_rng_uniform(r)*(tPos[i]-tNeg[i]);
-              lat_pS[it_lat++] = lat_P[i];
-              break;
-            default :
               break;
           }
         }
       }
 
-      // Sample initial infectious period durations
+      /* Sample initial infectious period durations */
       inf_p.fill(0.0);
       for (int j=0;j<n_ii;++j)  {
         int i = id_allinf[j];
@@ -360,18 +352,18 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
         inf_p[j] = tEnd[i]-tInf[i]-lat_pS[j];// potentially censored, definitely binned
       }
 
-      // Sample initial latent period parameters
+      /* Sample initial latent period parameters  */
       plat.fill(0.0);
       switch (mflag)  {
         case 4:
-          plat[0] = shp_l[0]+gsl_rng_uniform(r)*(shp_l[1]-shp_l[0]);
-          plat[1] = mue_l[0]+gsl_rng_uniform(r)*(mue_l[1]-mue_l[0]);
-          plat[2] = shp_l[0]+gsl_rng_uniform(r)*(shp_l[1]-shp_l[0]);
-          plat[3] = mue_l[0]+gsl_rng_uniform(r)*(mue_l[1]-mue_l[0]);
+          plat[0] = gsl_ran_flat(r,shp_l[0],shp_l[1]);
+          plat[1] = gsl_ran_flat(r,mue_l[0],mue_l[1]);
+          plat[2] = gsl_ran_flat(r,shp_l[0],shp_l[1]);
+          plat[3] = gsl_ran_flat(r,mue_l[0],mue_l[1]);
           break;
         case 2:
-          plat[0] = shp_l[0]+gsl_rng_uniform(r)*(shp_l[1]-shp_l[0]);
-          plat[1] = mue_l[0]+gsl_rng_uniform(r)*(mue_l[1]-mue_l[0]);
+          plat[0] = gsl_ran_flat(r,shp_l[0],shp_l[1]);
+          plat[1] = gsl_ran_flat(r,mue_l[0],mue_l[1]);
           break;
         case 0:
           break;
@@ -379,20 +371,17 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
           break;
       }
 
-      // Sample initial infectious period parameters
+      /* Sample initial infectious period parameters  */
       pinf.fill(0.0);
-      pinf[0] = gsl_rng_uniform(r)*(shp_i[1]-shp_i[0])+shp_i[0];
-      pinf[1] = gsl_rng_uniform(r)*(mue_i[1]-mue_i[0])+mue_i[0];
+      pinf[0] = gsl_ran_flat(r,shp_i[0],shp_i[1]);
+      pinf[1] = gsl_ran_flat(r,mue_i[0],mue_i[1]);
 
-      // Sample initial transmission parameters
+      /* Sample initial transmission parameters */
       beta.fill(0.0);
       for (int bi=0;bi<bflag;++bi)  {
-        beta[bi] = bt[0] + gsl_rng_uniform(r)*(bt[1]-bt[0]);
+        beta[bi] = gsl_ran_flat(r,bt[0],bt[1]);
       }
 
-/*      cout << tinfS.size() << " " << lat_pS.size() << " "
-           << plat.size()  << " " << pinf.size()  << "\n"
-           << par_old.size() << endl;*/
       if (mflag)  {
         parsamp << tinfS , lat_pS , plat , pinf , beta;
       }
@@ -403,16 +392,16 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
       //cout << "Calc prior...";// << flush;
       logprr = prior_calc();
       //cout << prior_old << endl;
-      if(init_counter>give_up)  {
-        out_par << "did not get finite prior: "+opath << endl;
-        ready = 0;
-        return(VectorXd::Zero(npar));
-      }
     }
     //cout << "Calc lhood...";// << flush;
     loglik = lhood_calc();
     //cout << lhood_old << endl;
     //std::cin.get();
+    if(init_counter>give_up)  {
+      out_par << "did not get finite prior: " << logprr << "\t" << perr_flag << "\t" << loglik << "\t" << lerr_flag << endl;
+      ready = 0;
+      return(VectorXd::Zero(npar));
+    }
   }
   if (TEST_FLAG)  { cout <<"INIT " << omp_get_thread_num() << "- samp gen'd in: "<<init_counter<<"\n"; }
   ready = 1;
@@ -480,14 +469,15 @@ void Model::writeburn(VectorXd pars)  {
  */
 double Model::prior_calc()  {
   double ptmp = 0.0;
-  perr_flag=0;
-  // latent period parameters combined or contacts first
+  lerr_flag = 0.0;
+  perr_flag = 0.0;
+  /* latent period parameters combined or contacts first  */
   if (mflag)  {
     ptmp += log(gsl_ran_gamma_pdf(plat[0],prior_latk[0],prior_latk[1]))
          +  log(gsl_ran_gamma_pdf(plat[1],prior_latm[0],prior_latm[1]));
     if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 1;if(TEST_FLAG==2)cout<<"1P "<<flush;return(ptmp); }
 
-    // latent period parameters for separated inoculated (same priors)
+    /* latent period parameters for separated inoculated (same priors)  */
     if (mflag==4)  {
       ptmp += log(gsl_ran_gamma_pdf(plat[2],prior_latk[0],prior_latk[1]))
            +  log(gsl_ran_gamma_pdf(plat[3],prior_latm[0],prior_latm[1]));
@@ -495,23 +485,24 @@ double Model::prior_calc()  {
     if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 2;if(TEST_FLAG==2)cout<<"2P "<<flush;return(ptmp); }
   }
 
-  // infectious period parameters
+  /* infectious period parameters */
   ptmp += log(gsl_ran_gamma_pdf(pinf[0],prior_infk[0],prior_infk[1]))
        +  log(gsl_ran_gamma_pdf(pinf[1],prior_infm[0],prior_infm[1]));
   if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 3;if(TEST_FLAG==2)cout<<"3P "<<flush;return(ptmp); }
 
-  // transmission parameters
+  /* transmission parameters  */
   for (int bi=0;bi<bflag;++bi)  {
     //ptmp += log(gsl_ran_flat_pdf(beta[bi],prior_beta[0],prior_beta[1]));    // Testing flat prior...
     ptmp += log(gsl_ran_gamma_pdf(beta[bi],prior_beta[0],prior_beta[1]));
   }
   if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 4;if(TEST_FLAG==2)cout<<"4P "<<flush;return(ptmp); }
 
-  // Constrain latent period between tNeg-tI and tPos-tI: E gets from tI to tN but before tP
+  /* Constrain latent period between tNeg-tI and tPos-tI: E gets from tI to tN but before tP  */
   for (int j=0;j<n_l;++j)  {
     int i = id_allinf[j];
-    ptmp += log(gsl_ran_flat_pdf(lat_P[i],max(0.0,tNeg[i]-tInf[i]),tPos[i]-tInf[i]));
-    if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 5;if(TEST_FLAG==2)cout<<"\t\t\t\t\t5P-"<<i<<"\t"<<tInf[i] << " " <<lat_pS[j]<<" "<<flush;return(ptmp); }
+    //ptmp += log(gsl_ran_flat_pdf(lat_P[i],max(0.0,tNeg[i]-tInf[i]),tPos[i]-tInf[i]));
+    ptmp += log(gsl_ran_flat_pdf(lat_P[i],tNeg[i]-tInf[i],tPos[i]-tInf[i]));  // FIXME negative E?
+    if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 5+j/100.0;if(TEST_FLAG==2)cout<<"\t\t\t\t\t5P-"<<i<<"\t"<<tInf[i] << " " <<lat_pS[j]<<" "<<flush;return(ptmp); }
     // Wee bit of early return... can skip one loop but not so efficient if decent acceptance rates?
     if (isinf(ptmp))  {
       if (TEST_FLAG==2)  {cout << endl;}
@@ -519,7 +510,7 @@ double Model::prior_calc()  {
     }
   }
 
-  // Constrain infection time between 0/ORSELHACK/tMove and first positive
+  /* Constrain infection time between 0/orsel_delay/tMove and first positive  */
   for (auto jit=id_contact.begin();jit!=id_contact.end();++jit)  {
     // directly grab indices of contacts rather than looping through iTyp
     int i = *jit;
@@ -535,13 +526,13 @@ double Model::prior_calc()  {
     else  {
       // Normal contact (poss within or between pen). Transmission occurs [intro,tPos]
       if (mflag)  {
-        ptmp += log(gsl_ran_flat_pdf(tInf[i],ORSELHACK,tPos[i]));
+        ptmp += log(gsl_ran_flat_pdf(tInf[i],orsel_delay,tPos[i]));
       }
       else  { // Latent periods assumed zero... so stronger constraints. Issue for inocs though?
         ptmp += log(gsl_ran_flat_pdf(tInf[i],tNeg[i],tPos[i]));
       }
     }
-    if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag=6;if(TEST_FLAG==2)cout<<"6P:"<<i<<" ";return(ptmp); }
+    if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag=6+i/100.0;if(TEST_FLAG==2)cout<<"6P:"<<i<<" ";return(ptmp); }
   }
 
   if ((TEST_FLAG==2)&&(isinf(ptmp)))  { if(TEST_FLAG==2)cout<<endl<<tInf<<"!"<<endl<<lat_pS<<endl<<endl; }
@@ -616,8 +607,8 @@ void Model::ns_calc(int i,std::vector<double>& ninfsum)  {
       switch (iTyp[j])  {
         case 0: // Inoc with no data - assuming to be infectious for full window [0,tMove]
           if (iTyp[i]==2)  { // C1 pig
-            (iStop>tMove[room]) ? ninfsum[0]+=tMove[room]-ORSELHACK //exposed to inocs for full time
-                                : ninfsum[0]+=iStop-ORSELHACK;      //infected before move
+            (iStop>tMove[room]) ? ninfsum[0]+=tMove[room]-orsel_delay //exposed to inocs for full time
+                                : ninfsum[0]+=iStop-orsel_delay;      //infected before move
           }
           // else an inoc or C2 - neither affected by source
           break;
@@ -785,15 +776,19 @@ void Model::probinf_calc(std::vector<double>& prob_inf)  {
  * \return double
  */
 double Model::lhood_calc()  {
+  lerr_flag = 0.0;
   double loglik = 0.0;
   // Get probabilities of infection for all contacts
   vector<double> prob_inf(n_a,0.0);
   probinf_calc(prob_inf);
   //Contributions from infection times for contact transmissionsn
   for (int i=0;i<n_a;++i)  {  // prob_inf already handles if transmission occurs or not
-    loglik += (iTyp[i]>1) ? log(prob_inf[i]) : 0.0;
+    if (PIGHACK)
+      loglik += (iTyp[i]>2) ? log(prob_inf[i]) : 0.0; // FIXME EXP2 HACK - ITYP>2
+    else
+      loglik += (iTyp[i]>1) ? log(prob_inf[i]) : 0.0; // FIXME EXP2 HACK - ITYP>2
+    if ((TEST_FLAG)&&(isinf(loglik)))  { lerr_flag=1+i/100.0;if(TEST_FLAG==2)cout<<"1L ";return(loglik); }
   }
-  if ((TEST_FLAG)&&(isinf(loglik)))  { if(TEST_FLAG==2)cout<<"1L "; }
 
   // Contributions from latent periods
   for (auto iit=id_allinf.begin();iit!=id_allinf.end();++iit)  {
@@ -824,8 +819,11 @@ double Model::lhood_calc()  {
         }
         break;
     }
+    if ((TEST_FLAG)&&(isinf(loglik)))  {
+      lerr_flag=2+i/100.0;
+      if (lat_P[i]<0.0) lerr_flag+=0.001;
+      if(TEST_FLAG==2)cout<<"2L ";return(loglik);}
   }
-  if ((TEST_FLAG)&&(isinf(loglik)))  { if(TEST_FLAG==2)cout<<"2L "; }
 
   // Contributions from infectious periods - potentially censored & definitely binned
   for (auto iit=id_allinf.begin();iit!=id_allinf.end();++iit)  {
@@ -833,7 +831,7 @@ double Model::lhood_calc()  {
     switch (cull[i])  {
       case 0:
         // Binned - tEnd is last positive. infectiousness bounded < tEnd+1 (first negative)
-        loglik += log(gsl_cdf_gamma_P(inf_p[id_ij[i]]+1.0,pinf[0],pinf[1]/pinf[0])
+        loglik += log(gsl_cdf_gamma_P(inf_p[id_ij[i]]+1.0,pinf[0],pinf[1]/pinf[0])  //+1.0 is for daily sampling!
                      -gsl_cdf_gamma_P(inf_p[id_ij[i]],pinf[0],pinf[1]/pinf[0]));
         break;
       case 1:
@@ -845,8 +843,9 @@ double Model::lhood_calc()  {
         cin.get();
         break;
     }
+    if ((TEST_FLAG)&&(isinf(loglik)))  { lerr_flag=3+i/100.0;if(TEST_FLAG==2)cout<<"3L " << endl;return(loglik); }
   }
-  if ((TEST_FLAG)&&(isinf(loglik)))  { if(TEST_FLAG==2)cout<<"3L " << endl; }
+
 
   // Finished
   return(loglik);
@@ -867,7 +866,7 @@ void Model::write(VectorXd pars,double logprr,double loglik)  {
   out_par << pars.tail(mflag+2+bflag).transpose() << "\n";
   // dump prior and likelihoods
   // FIXME perr_flag does not correspond to the dumped prior and likelihood yet
-  out_lhd << logprr<< " " << perr_flag << " " << loglik<< "\n";
+  out_lhd << logprr<< "\t" << loglik<< "\t" << perr_flag << "\t" << lerr_flag << "\n";
   // infectious periods, well, sort of. Not inferred, just tEnd-latp-tInf
   out_ipd << inf_p.transpose() << "\n";
 }

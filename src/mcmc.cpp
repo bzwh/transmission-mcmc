@@ -18,11 +18,11 @@ int main(int argc, char* argv[])  {
   const int df1 = (argc==3) ? atoi(argv[1]) : 0;
   const int df2 = (argc==3) ? atoi(argv[2]) : 1;
 
-  const int mflag = 2;        // 2:sep inoc/contact. 1:single parameter set. 0:SIR model
+  const int mflag = 1;        // 2:sep inoc/contact. 1:single parameter set. 0:SIR model
   const int nchain = 4;       // num parallel chains
-  const int n_samp = 1e8;       // samples
-  const int n_burn = 1e8;       // burn in
-  const int n_thin = 1e4;       // thinning
+  const int n_samp = 5e6;       // samples
+  const int n_burn = 5e6;       // burn in
+  const int n_thin = 5e2;       // thinning
   const int lflag = 1;        // log to screen
   for (int dflag=df1;dflag<df2;++dflag)  {        // id of experiment to fit
     #pragma omp parallel num_threads(nchain)
@@ -41,9 +41,10 @@ int main(int argc, char* argv[])  {
         {
           for (int rms=0;rms<chain.model.n_r;++rms)  {
             logstream << "Room" << rms << ": P" << chain.model.bflags[rms] << " C" << chain.model.cflags[rms] << "\n";
-            cout << logstream.str() << flush;
-            logstream.str(string());
           }
+          logstream << chain.model.opath << "\n";
+          cout << logstream.str() << flush;
+          logstream.str(string());
         }
         logstream << "  Run: " << dflag << ". Chain: " <<  cno << ".\n";
         cout <<  logstream.str() << flush;
