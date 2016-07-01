@@ -13,6 +13,7 @@
 #include "Model.hpp"
 
 #define TEST_FLAG 1
+#define PIGHACK 0
 
 const double EPSILON = std::numeric_limits<double>::epsilon();
 
@@ -54,7 +55,7 @@ void Model::setup(int cno,int mf,int df)  {
 
 
 void Model::setfns(int cno,int df)  {
-  const int species_flag = 0;
+  const int species_flag = 2;
   switch (species_flag)  {
     case 0:
       dname = "./input/fmd-sheep/ChallengeData_sheep.txt";
@@ -64,9 +65,8 @@ void Model::setfns(int cno,int df)  {
 
     case 1:
       //dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
-      //dname = "./input/fmd-pigs/exp2-challenge_only.txt";
-      #define PIGHACK 1
-      dname = "./input/fmd-pigs/ChallengeDataPigs-exp2.txt";
+      dname = "./input/fmd-pigs/exp2-challenge_only.txt";
+      //dname = "./input/fmd-pigs/ChallengeDataPigs-combined.txt";
       pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
       opath = "./outputs/fmd_pigs/";
       break;
@@ -230,7 +230,7 @@ void Model::load_priors()  {
  */
 VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  {
   int init_counter = 0;
-  int give_up = 1000; // Really shouldn't struggle this bad
+  int give_up = 10000; // Really shouldn't struggle this bad
   // FIXME hardcoded... wide enough for all data sets?
   // Uniform bounds on initial infection times
   /*vector<double> shp_l = {0.0,25.0};
@@ -242,7 +242,7 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
   vector<double> shp_l = {0.0,5.0};
   vector<double> mue_l = {0.0,2.0};
   vector<double> shp_i = {0.0,5.0};
-  vector<double> mue_i = {0.0,10.0};
+  vector<double> mue_i = {0.0,5.0};
   vector<double> bt = {0.0,5.0};
   /*vector<double> shp_l = {0.0,2.5};
   vector<double> mue_l = {0.0,2.5};
@@ -269,6 +269,13 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
     logprr = std::numeric_limits<double>::infinity();
     while (isinf(logprr))  { // separate this to gen
       ++init_counter;
+      if(init_counter>give_up)  {
+        out_par << "did not get finite prior: " << logprr << "\t" << perr_flag << "\t" << loglik << "\t" << lerr_flag << endl;
+        MatrixXd mtmp(n_a,2); mtmp << tInf,lat_P;
+        cout << mtmp << endl;
+        ready = 0;
+        return(VectorXd::Zero(npar));
+      }
       /* Initial infection times  */
       tInf.fill(0.0);
       tinfS.fill(0.0);
@@ -292,15 +299,15 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
 
             case 2:
               // Contact transmission (pen1)
-              tInf[i] = gsl_ran_flat(r,tNeg[i],tPos[i]);  // [SG]
-              //tInf[i] = orsel_delay+gsl_rng_uniform(r)*(tPos[i]-orsel_delay)*0.5;
+              tInf[i] = gsl_ran_flat(r,orsel_delay,tPos[i]);  // [SG]
+              //tInf[i] = orsel_delay+gsl_rng_uniform(r)*(5.0);
               tinfS[it_tinf++] = tInf[i];
             break;
 
             case 3:
               // Contact transmission (pen2)
-              tInf[i] = gsl_ran_flat(r,tNeg[i],tPos[i]);  // [SG]
-              //tInf[i] = orsel_delay+gsl_rng_uniform(r)*(tPos[i]-orsel_delay)*0.5;
+              //tInf[i] = gsl_ran_flat(r,tNeg[i],tPos[i]);  // [SG]
+              tInf[i] = orsel_delay+gsl_rng_uniform(r)*(5.0);
               tinfS[it_tinf++] = tInf[i];
             break;
 
@@ -334,7 +341,7 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
               break;
             default:
               lat_P[i] = (tInf[i]>tNeg[i]) ? gsl_ran_flat(r,tInf[i],tPos[i])-tInf[i]
-                                           : gsl_ran_flat(r,0.0,tPos[i]-tInf[i]);
+                                           : gsl_ran_flat(r,tNeg[i]-tInf[i],tPos[i]-tInf[i]); // FIXME INIT ISSUE
               lat_pS[it_lat++] = lat_P[i];
               break;
           }
@@ -356,14 +363,14 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
       plat.fill(0.0);
       switch (mflag)  {
         case 4:
-          plat[0] = gsl_ran_flat(r,shp_l[0],shp_l[1]);
-          plat[1] = gsl_ran_flat(r,mue_l[0],mue_l[1]);
-          plat[2] = gsl_ran_flat(r,shp_l[0],shp_l[1]);
-          plat[3] = gsl_ran_flat(r,mue_l[0],mue_l[1]);
+          plat[0] = gsl_ran_flat(r,shp_l[0],shp_l[1]);  // Contact shape
+          plat[1] = gsl_ran_flat(r,mue_l[0],mue_l[1]);  // Contact mean
+          plat[2] = gsl_ran_flat(r,shp_l[0],shp_l[1]);  // Inoc shape
+          plat[3] = gsl_ran_flat(r,mue_l[0],mue_l[1]);  // Inoc mean
           break;
         case 2:
-          plat[0] = gsl_ran_flat(r,shp_l[0],shp_l[1]);
-          plat[1] = gsl_ran_flat(r,mue_l[0],mue_l[1]);
+          plat[0] = gsl_ran_flat(r,shp_l[0],shp_l[1]);  // Combined shape
+          plat[1] = gsl_ran_flat(r,mue_l[0],mue_l[1]);  // Combined mean
           break;
         case 0:
           break;
@@ -394,14 +401,12 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
       //cout << prior_old << endl;
     }
     //cout << "Calc lhood...";// << flush;
+    //cout << init_counter << endl;
     loglik = lhood_calc();
     //cout << lhood_old << endl;
     //std::cin.get();
-    if(init_counter>give_up)  {
-      out_par << "did not get finite prior: " << logprr << "\t" << perr_flag << "\t" << loglik << "\t" << lerr_flag << endl;
-      ready = 0;
-      return(VectorXd::Zero(npar));
-    }
+
+
   }
   if (TEST_FLAG)  { cout <<"INIT " << omp_get_thread_num() << "- samp gen'd in: "<<init_counter<<"\n"; }
   ready = 1;
@@ -433,7 +438,7 @@ void Model::parse(VectorXd par_vec)  {
     lat_pS = parsamp.segment(n_ti,n_l);     // unobserved latent periods
     lat_P.fill(-1.0);
     for (int j=0;j<n_ii;++j)  {
-      int i = id_allinf[j];//FIXME id_allinf or id_ij?
+      int i = id_allinf[j];
       lat_P[i] = lat_pS[j];
     }
   }
@@ -441,7 +446,7 @@ void Model::parse(VectorXd par_vec)  {
   // Extract infectious periods
   for (int j=0;j<n_ii;++j)  {
     int i = id_allinf[j];
-    inf_p[j] = tEnd[i]-tInf[i]-lat_pS[j];
+    inf_p[j] = tEnd[i]-tInf[i]-lat_P[i];
   }
 
   // Extract Parameters
@@ -485,32 +490,18 @@ double Model::prior_calc()  {
     if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 2;if(TEST_FLAG==2)cout<<"2P "<<flush;return(ptmp); }
   }
 
-  /* infectious period parameters */
+  /* 3 infectious period parameters */
   ptmp += log(gsl_ran_gamma_pdf(pinf[0],prior_infk[0],prior_infk[1]))
        +  log(gsl_ran_gamma_pdf(pinf[1],prior_infm[0],prior_infm[1]));
   if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 3;if(TEST_FLAG==2)cout<<"3P "<<flush;return(ptmp); }
 
-  /* transmission parameters  */
+  /* 4 transmission parameters  */
   for (int bi=0;bi<bflag;++bi)  {
-    //ptmp += log(gsl_ran_flat_pdf(beta[bi],prior_beta[0],prior_beta[1]));    // Testing flat prior...
     ptmp += log(gsl_ran_gamma_pdf(beta[bi],prior_beta[0],prior_beta[1]));
   }
   if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 4;if(TEST_FLAG==2)cout<<"4P "<<flush;return(ptmp); }
 
-  /* Constrain latent period between tNeg-tI and tPos-tI: E gets from tI to tN but before tP  */
-  for (int j=0;j<n_l;++j)  {
-    int i = id_allinf[j];
-    //ptmp += log(gsl_ran_flat_pdf(lat_P[i],max(0.0,tNeg[i]-tInf[i]),tPos[i]-tInf[i]));
-    ptmp += log(gsl_ran_flat_pdf(lat_P[i],tNeg[i]-tInf[i],tPos[i]-tInf[i]));  // FIXME negative E?
-    if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 5+j/100.0;if(TEST_FLAG==2)cout<<"\t\t\t\t\t5P-"<<i<<"\t"<<tInf[i] << " " <<lat_pS[j]<<" "<<flush;return(ptmp); }
-    // Wee bit of early return... can skip one loop but not so efficient if decent acceptance rates?
-    if (isinf(ptmp))  {
-      if (TEST_FLAG==2)  {cout << endl;}
-      return(ptmp);
-    }
-  }
-
-  /* Constrain infection time between 0/orsel_delay/tMove and first positive  */
+  /* 5 Constrain infection time between 0/orsel_delay/tMove and first positive  */
   for (auto jit=id_contact.begin();jit!=id_contact.end();++jit)  {
     // directly grab indices of contacts rather than looping through iTyp
     int i = *jit;
@@ -532,7 +523,19 @@ double Model::prior_calc()  {
         ptmp += log(gsl_ran_flat_pdf(tInf[i],tNeg[i],tPos[i]));
       }
     }
-    if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag=6+i/100.0;if(TEST_FLAG==2)cout<<"6P:"<<i<<" ";return(ptmp); }
+    if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag=5+i/100.0;if(TEST_FLAG==2)cout<<"5P:"<<i<<" ";return(ptmp); }
+  }
+
+  /* 6 Constrain latent period between tNeg-tI and tPos-tI: E gets from tI to tN but before tP  */
+  for (int j=0;j<n_l;++j)  {
+    int i = id_allinf[j]; // this is animal id for [0:nA]
+    ptmp += log(gsl_ran_flat_pdf(lat_P[i],tNeg[i]-tInf[i],tPos[i]-tInf[i]));
+    if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 6+j/100.0;if(TEST_FLAG==2)cout<<"\t\t\t\t\t6P-"<<i<<"\t"<<tInf[i] << " " <<lat_pS[j]<<" "<<flush;return(ptmp); }
+    // Wee bit of early return... can skip one loop but not so efficient if decent acceptance rates?
+    if (isinf(ptmp))  {
+      if (TEST_FLAG==2)  {cout << endl;}
+      return(ptmp);
+    }
   }
 
   if ((TEST_FLAG==2)&&(isinf(ptmp)))  { if(TEST_FLAG==2)cout<<endl<<tInf<<"!"<<endl<<lat_pS<<endl<<endl; }
@@ -547,11 +550,7 @@ double Model::prior_calc()  {
  * \return void
  */
 void Model::ni_calc(int i,std::vector<double>& ninf)  {
-  if (tNeg[i]<0)  { // Should never trigger...  never infected?
-    cout << "WTF ni_calc" << endl;
-    exit(-1);
-  }
-  // Animal i, want number of infectious left in room when i got infected
+  // Infected animal i, want number of still infectious in room when i got infected
   int room = rooms[i];
   for (auto jit=rLst[room].begin();jit!=rLst[room].end();++jit)  {
     int j = *jit;   // animal id for each animal in this room
@@ -561,7 +560,7 @@ void Model::ni_calc(int i,std::vector<double>& ninf)  {
     else  {
       // Check each other animal in this room
       if (tNeg[j]<0)  {
-        // j was never infected/infectious, so no contirbution
+        // j was never infected/infectious, so no contribution
         continue;
       }
       else  {
@@ -573,10 +572,8 @@ void Model::ni_calc(int i,std::vector<double>& ninf)  {
             ninf[0] += 1.0;
           }
         }
-        //else if ((tInf[i]>(tInf[j]+lat_pS[id_ij[j]])) && (tInf[i]<tEnd[j]))  {
-        else if ((tInf[i]>(tInf[j]+lat_P[j])) && (tInf[i]<tEnd[j]))  {
-          // iTyp is 2 for pen1 contact and 3 for pen2 contact
-          (iTyp[j]==3) ? ninf[1]+=1.0 : ninf[0]+=1.0;
+        else if ((tInf[i]>(tInf[j]+lat_P[j])) && (tInf[i]<tEnd[j]))  { // TODO tEnd[j]+1? t_FN?
+          (iTyp[j]==3) ? ninf[1]+=1.0 : ninf[0]+=1.0; // Check which pen...
         }
       }
     }
@@ -597,13 +594,12 @@ void Model::ns_calc(int i,std::vector<double>& ninfsum)  {
 
   // Count up total infectious time each j has with our animal i
   for (auto jit=rLst[room].begin();jit!=rLst[room].end();++jit)  {
-    int j = *jit; // animal id for each in same room as i
+    int j = *jit; // animal id for each in this room
     if ((tNeg[j]<0)||(i==j))  {
-      // j was never infected, no contribution
+      // j was never infected, no contribution. and i can't infect itself...
       continue;
     }
     else  {
-        // Censored Inoc is assumed infectious from t==0
       switch (iTyp[j])  {
         case 0: // Inoc with no data - assuming to be infectious for full window [0,tMove]
           if (iTyp[i]==2)  { // C1 pig
@@ -624,7 +620,8 @@ void Model::ns_calc(int i,std::vector<double>& ninfsum)  {
           break;
 
         case 2: // Challenge from pen 1
-          if (iStop>(lat_P[j]+inf_p[id_ij[j]]))  {
+          //if (iStop>(lat_P[j]+inf_p[id_ij[j]]))  {  // FIXME should have the tInf[j] too?
+          if (iStop>tEnd[j])  {
             ninfsum[0] += inf_p[id_ij[j]];
           }
           else  {
@@ -633,7 +630,7 @@ void Model::ns_calc(int i,std::vector<double>& ninfsum)  {
           break;
 
         case 3: // Challenge from pen 2
-          if (iStop>(lat_P[j]+inf_p[id_ij[j]]))  {
+          if (iStop>tEnd[j])  {
             ninfsum[1] += inf_p[id_ij[j]];
           }
           else  {
@@ -642,7 +639,12 @@ void Model::ns_calc(int i,std::vector<double>& ninfsum)  {
           break;
 
         case 4: // C2 challenge
-          ninfsum[0] += max(iStop-(tInf[j]+lat_P[j]),0.0);
+          if (iStop>tEnd[j])  {
+            ninfsum[1] += inf_p[id_ij[j]];
+          }
+          else  {
+            ninfsum[0] += max(iStop-(tInf[j]+lat_P[j]),0.0);
+          }
           break;
       }
 /*        double istart = max(tInf[j]+lat_pS[id_ij[j]],double(tMove[room]));
@@ -783,10 +785,10 @@ double Model::lhood_calc()  {
   probinf_calc(prob_inf);
   //Contributions from infection times for contact transmissionsn
   for (int i=0;i<n_a;++i)  {  // prob_inf already handles if transmission occurs or not
-    if (PIGHACK)
-      loglik += (iTyp[i]>2) ? log(prob_inf[i]) : 0.0; // FIXME EXP2 HACK - ITYP>2
+    if (PIGHACK)  // FIXME EXP2 HACK - ITYP>2
+      loglik += (iTyp[i]>2) ? log(prob_inf[i]) : 0.0;
     else
-      loglik += (iTyp[i]>1) ? log(prob_inf[i]) : 0.0; // FIXME EXP2 HACK - ITYP>2
+      loglik += (iTyp[i]>1) ? log(prob_inf[i]) : 0.0;
     if ((TEST_FLAG)&&(isinf(loglik)))  { lerr_flag=1+i/100.0;if(TEST_FLAG==2)cout<<"1L ";return(loglik); }
   }
 
