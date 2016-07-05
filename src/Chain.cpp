@@ -68,7 +68,7 @@ Chain::Chain(int nb,int ns,int nt,int cno,int mf,int df)  {
 }
 
 
-/** \brief
+/** \brief Wot it sez on the tin
  * \return void
  */
 void Chain::run()  {
@@ -147,24 +147,14 @@ void Chain::gen(int n)  {  // FIXME separate the non-infecteds too
  * \return 1 for accepted, 0 for rejected
  */
 int Chain::acceptreject()  {
-  // Acceptance flag
   int to_acc = 0;
-  double lp = 0.0;
-  // Calc prior
   prior_new = model.prior_calc();
-  lp += prior_new;
-  // Don't bother calculating likelihood if prior already rejects
-  if (isfinite(lp))  {
+  if (isfinite(prior_new))  {
     lhood_new = model.lhood_calc();
-    lp += lhood_new;
-  }
-  else  {
-    return(0);
-  }
-
-  if (isfinite(lp))  {
-    double rr = gsl_rng_uniform(r);
-    to_acc = (rr<exp(lp-(lhood_old+prior_old))) ? 1 : 0;
+    if (isfinite(lhood_new))  {
+      double rr = gsl_rng_uniform(r);
+      to_acc = (rr<exp((lhood_new+prior_new)-(lhood_old+prior_old))) ? 1 : 0;
+    }
   }
   return(to_acc);
 }
