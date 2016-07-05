@@ -13,13 +13,15 @@
 #include "Model.hpp"
 
 #define TEST_FLAG 1
-#define PIGHACK 0
+#define BETAHACK 1
+
 
 const double EPSILON = std::numeric_limits<double>::epsilon();
 
 using namespace Eigen;
 using std::ifstream;
 using std::ofstream;
+using std::stringstream;
 using std::cout;
 using std::endl;
 using std::flush;
@@ -46,6 +48,7 @@ Model::Model()  {
   orsel_delay = 1.0;
 }
 
+
 void Model::setup(int cno,int mf,int df)  {
   mflag = mf*2;
   setfns(cno,df);
@@ -55,7 +58,7 @@ void Model::setup(int cno,int mf,int df)  {
 
 
 void Model::setfns(int cno,int df)  {
-  const int species_flag = 2;
+  const int species_flag = 1;
   switch (species_flag)  {
     case 0:
       dname = "./input/fmd-sheep/ChallengeData_sheep.txt";
@@ -66,6 +69,7 @@ void Model::setfns(int cno,int df)  {
     case 1:
       //dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
       dname = "./input/fmd-pigs/exp2-challenge_only.txt";
+      //dname = "./input/fmd-pigs/combined.txt";
       //dname = "./input/fmd-pigs/ChallengeDataPigs-combined.txt";
       pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
       opath = "./outputs/fmd_pigs/";
@@ -109,6 +113,7 @@ void Model::load_data()  {
     nroom2.resize(n_r,0); // numbers of animals in pen 2 of each room
     bflags.resize(n_r,1);
     cflags.resize(n_r,0);
+    pflags.resize(n_r,1); // Default to assume there's no inocs, correct in loop
     tMove.resize(n_r,100.0);  // time animals moved from each room - orselpigs
     iTyp.resize(n_a,0);
     // catch tNeg/tPos/tEnd == -1  for non-infections? or just use tNeg
@@ -145,7 +150,13 @@ void Model::load_data()  {
         id_contact.push_back(i);
       }
     }
-    (iTyp[i]==3) ? ++nroom2[rnumi] : ++nroom1[rnumi];
+    if (bflags[rnumi]==2)  {    // Two pens
+      (iTyp[i]==3) ? ++nroom2[rnumi] : ++nroom1[rnumi];
+    }
+    else  {                     // One pen - coopting nroom2 for tmove
+      ++nroom1[rnumi];
+      if (iTyp[i]==4) ++nroom2[rnumi];
+    }
   }
   n_ii = id_allinf.size();  // total number of infected inocs + contacts
   n_l = (mflag) ? n_ii : 0; // number of latent periods to be inferred
@@ -165,14 +176,47 @@ void Model::load_data()  {
       tMove[room] = orsel_delay;
     }
   }
+  /* Check for inocs in room and adjust the PIGHACK*/
+  for (int aid=0;aid<n_a;++aid)  {
+    if (iTyp[aid]<2)  {
+      pflags[rooms[aid]] = 0;
+    }
+  }
+  ncount();
   // tI, E, lat (k mu), inf (k mu), beta (B W?)
   npar = n_ti+n_l+mflag+2+bflag;
 
-  /* number of infection times, latent periods, also latent periods
-  cout << "Animals: " << n_a << "\nContacts: " << n_c << "\nRooms: " << n_r << endl;
-  cout << n_ti << " " << n_ii << " " << id_allinf.size() << endl;*/
 }
 
+
+/** \brief Fetch total number of animals in each room [0:n_r-1] on each day [0:exend+1]
+ * Stored for each pen separately
+ * \return void
+ */
+void Model::ncount()  {
+  ntot_pens1 = MatrixXd(n_r,exend+1);
+  ntot_pens2 = MatrixXd(n_r,exend+1);
+ for(int rm=0;rm<n_r;++rm)  {
+    ntot_pens1.row(rm).fill(nroom1[rm]);
+    ntot_pens2.row(rm).fill(nroom2[rm]);
+  }
+  for (int i=0;i<n_a;++i)  {
+    if(cull[i])  {
+      for (int t=tEnd[i];t<exend+1;++t)  {
+        if (iTyp[i]>2) {
+          ntot_pens2(rooms[i],t) -= 1.0;
+        }
+        else  {
+          ntot_pens1(rooms[i],t) -= 1.0;
+        }
+      }
+    }
+  }
+  // FIXME Orsel's pigs not tested on cull date. tEnd is not tCull like it is with Guinat's
+  cout << endl << ntot_pens1 << endl;
+  cout << endl << ntot_pens2 << endl;
+
+}
 
 
 /** \brief Dump out data structures built from raw data.
@@ -306,8 +350,8 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
 
             case 3:
               // Contact transmission (pen2)
-              //tInf[i] = gsl_ran_flat(r,tNeg[i],tPos[i]);  // [SG]
-              tInf[i] = orsel_delay+gsl_rng_uniform(r)*(5.0);
+              tInf[i] = gsl_ran_flat(r,orsel_delay,tPos[i]);  // [SG]
+              //tInf[i] = orsel_delay+gsl_rng_uniform(r)*(5.0);
               tinfS[it_tinf++] = tInf[i];
             break;
 
@@ -408,7 +452,11 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
 
 
   }
-  if (TEST_FLAG)  { cout <<"INIT " << omp_get_thread_num() << "- samp gen'd in: "<<init_counter<<"\n"; }
+  if (TEST_FLAG)  {
+    stringstream lstream;
+    lstream <<"INIT " << omp_get_thread_num() << "- samp gen'd in: "<<init_counter<<"\n";
+    cout << lstream.str() << flush;
+  }
   ready = 1;
   return(parsamp);
 }
@@ -424,7 +472,7 @@ void Model::parse(VectorXd par_vec)  {
     exit(-1);
   }
   parsamp = par_vec;
-  // Extract infection times
+  /* Extract infection times */
   tinfS = parsamp.head(n_ti);            // infection times of contacts only
   tInf.fill(0.0);                       // Inocs assumed to be infected at t=0
   // id_contact tells us which i \in [0,n_a) to populate
@@ -432,8 +480,7 @@ void Model::parse(VectorXd par_vec)  {
     int i = id_contact[j];
     tInf[i] = tinfS[j];
   }
-
-  // Extract latent periods
+  /* Extract latent periods */
   if (mflag)  {
     lat_pS = parsamp.segment(n_ti,n_l);     // unobserved latent periods
     lat_P.fill(-1.0);
@@ -442,18 +489,15 @@ void Model::parse(VectorXd par_vec)  {
       lat_P[i] = lat_pS[j];
     }
   }
-
-  // Extract infectious periods
+  /* Extract infectious periods */
   for (int j=0;j<n_ii;++j)  {
     int i = id_allinf[j];
     inf_p[j] = tEnd[i]-tInf[i]-lat_P[i];
   }
-
-  // Extract Parameters
+  /* Extract Parameters */
   plat = parsamp.segment(n_ti+n_l,mflag);    // shape and mean latent period inocs and contacts
   pinf = parsamp.segment(n_ti+n_l+mflag,2);  // shape and mean infectious period
   beta = parsamp.tail(bflag);
-  //out_acc << prior_old << " " << lhood_old << " " << par_old.transpose() << endl;
 }
 
 /** \brief Wanna have a gander at the burn-in.
@@ -529,7 +573,13 @@ double Model::prior_calc()  {
   /* 6 Constrain latent period between tNeg-tI and tPos-tI: E gets from tI to tN but before tP  */
   for (int j=0;j<n_l;++j)  {
     int i = id_allinf[j]; // this is animal id for [0:nA]
-    ptmp += log(gsl_ran_flat_pdf(lat_P[i],tNeg[i]-tInf[i],tPos[i]-tInf[i]));
+    if (BETAHACK)  {
+      double ee = (tPos[i]-tNeg[i]);
+      ptmp += log(gsl_ran_beta_pdf((lat_P[i]+tInf[i]-tNeg[i])/ee,1.01,1.01));
+    }
+    else  {
+      ptmp += log(gsl_ran_flat_pdf(lat_P[i],tNeg[i]-tInf[i],tPos[i]-tInf[i]));
+    }
     if ((TEST_FLAG)&&(isinf(ptmp)))  { perr_flag = 6+j/100.0;if(TEST_FLAG==2)cout<<"\t\t\t\t\t6P-"<<i<<"\t"<<tInf[i] << " " <<lat_pS[j]<<" "<<flush;return(ptmp); }
     // Wee bit of early return... can skip one loop but not so efficient if decent acceptance rates?
     if (isinf(ptmp))  {
@@ -647,13 +697,6 @@ void Model::ns_calc(int i,std::vector<double>& ninfsum)  {
           }
           break;
       }
-/*        double istart = max(tInf[j]+lat_pS[id_ij[j]],double(tMove[room]));
-        if (iTyp[j]==3)  {
-          ninfsum[1] += max(istop-istart, 0.0);
-        }
-        else  {
-          ninfsum[0] += max(istop-istart, 0.0);
-        }*/
     }
   }
 }
@@ -785,7 +828,7 @@ double Model::lhood_calc()  {
   probinf_calc(prob_inf);
   //Contributions from infection times for contact transmissionsn
   for (int i=0;i<n_a;++i)  {  // prob_inf already handles if transmission occurs or not
-    if (PIGHACK)  // FIXME EXP2 HACK - ITYP>2
+    if (pflags[rooms[i]])  // FIXME EXP2 HACK - ITYP>2
       loglik += (iTyp[i]>2) ? log(prob_inf[i]) : 0.0;
     else
       loglik += (iTyp[i]>1) ? log(prob_inf[i]) : 0.0;
@@ -842,13 +885,11 @@ double Model::lhood_calc()  {
       default:
         // Should not happen!!
         cout << "LHOOD - cull status not zero or one WTF?" << endl;
-        cin.get();
+        exit(-1);
         break;
     }
     if ((TEST_FLAG)&&(isinf(loglik)))  { lerr_flag=3+i/100.0;if(TEST_FLAG==2)cout<<"3L " << endl;return(loglik); }
   }
-
-
   // Finished
   return(loglik);
 }
