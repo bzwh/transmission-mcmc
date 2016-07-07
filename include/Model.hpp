@@ -10,12 +10,15 @@ public:
   void setup(int,int,int);
   void setfns(int,int);
   void load_data();
+  void ncount();
   Eigen::VectorXd init_samp(gsl_rng*,double&,double&,int&);
   void load_priors();
   void parse(Eigen::VectorXd);
   void ni_calc(int,std::vector<double>&);
   void ns_calc(int,std::vector<double>&);
+  void ns_calc2(int,std::vector<double>&);
   void probinf_calc(std::vector<double>&);
+  void probinf_calc2(std::vector<double>&);
   double lhood_calc();
   double prior_calc();
 
@@ -48,6 +51,7 @@ public:
   double orsel_delay;                     /// Intro delay for first challenge. Orsel default =1.0
   std::vector<int> bflags;                /// number of pens in each room
   std::vector<int> cflags;                /// indicates C2 challenge (orsel pigs)
+  std::vector<int> pflags;
   std::vector<int> id_allinf;   /// all infecteds. for lat * infectious periods. size n_l - rescaled to n_a
   std::vector<int> id_ij;       /// Converts i \in [0,n_a] to j \in [0,n_ii] for access to lat_p/inf_p
   std::vector<int> id_contact;  /// +ve contacts for infection times. x[k \in n_i] = {i \in [0,n_a]}
@@ -61,6 +65,11 @@ public:
   std::vector<int> rooms;                 /// rooms[i] room id for animal i
   std::vector<int> nroom1;                /// number of animals in each room's main pen
   std::vector<int> nroom2;                /// number of animals in each room's 2nd pen(?)
+  std::vector< std::vector<int> > deltaN;
+  Eigen::MatrixXd ntot_pens0;
+  std::vector< std::vector<int> > deltaN1;
+  Eigen::MatrixXd ntot_pens1;
+  std::vector< std::vector<int> > deltaN2;
   int npar;                               /// Number of parameters being fit
 
   // Priors

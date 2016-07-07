@@ -58,7 +58,7 @@ void Model::setup(int cno,int mf,int df)  {
 
 
 void Model::setfns(int cno,int df)  {
-  const int species_flag = 1;
+  const int species_flag = 2;
   switch (species_flag)  {
     case 0:
       dname = "./input/fmd-sheep/ChallengeData_sheep.txt";
@@ -194,28 +194,61 @@ void Model::load_data()  {
  * \return void
  */
 void Model::ncount()  {
+  deltaN1.resize(n_r,vector<int>(1,0));
+  deltaN2.resize(n_r,vector<int>(1,0));
+  ntot_pens0 = MatrixXd(n_r,exend+1);
   ntot_pens1 = MatrixXd(n_r,exend+1);
-  ntot_pens2 = MatrixXd(n_r,exend+1);
  for(int rm=0;rm<n_r;++rm)  {
-    ntot_pens1.row(rm).fill(nroom1[rm]);
-    ntot_pens2.row(rm).fill(nroom2[rm]);
+    ntot_pens0.row(rm).fill(nroom1[rm]);
+    ntot_pens1.row(rm).fill(nroom2[rm]);
   }
-  for (int i=0;i<n_a;++i)  {
-    if(cull[i])  {
-      for (int t=tEnd[i];t<exend+1;++t)  {
-        if (iTyp[i]>2) {
-          ntot_pens2(rooms[i],t) -= 1.0;
-        }
-        else  {
-          ntot_pens1(rooms[i],t) -= 1.0;
-        }
+  for (int t=1;t<exend+1;++t)  {
+    for (int i=0;i<n_a;++i)  {
+      if ((cull[i])&&(tEnd[i]<exend))  {
+        if (t>=tEnd[i])
+        (iTyp[i]>2) ? ntot_pens1(rooms[i],t) -= 1.0
+                    : ntot_pens0(rooms[i],t) -= 1.0;
       }
     }
   }
-  // FIXME Orsel's pigs not tested on cull date. tEnd is not tCull like it is with Guinat's
-  cout << endl << ntot_pens1 << endl;
-  cout << endl << ntot_pens2 << endl;
+  deltaN.resize(n_r,vector<int>(1,0));
+  for (int rm=0;rm<n_r;++rm)  {
+    for (int t=1;t<exend+1;++t)  {
+      if (ntot_pens0(rm,t)<ntot_pens0(rm,t-1))  {
+        deltaN1[rm].push_back(t);
+        deltaN[rm].push_back(t);
+      }
+      if (ntot_pens1(rm,t)<ntot_pens1(rm,t-1))  {
+        deltaN2[rm].push_back(t);
+        deltaN[rm].push_back(t);
+      }
+    }
+    deltaN1[rm].push_back(exend);
+    deltaN2[rm].push_back(exend);
+    deltaN[rm].push_back(exend);
+  }
 
+  // FIXME Orsel's pigs not tested on cull date. tEnd is not tCull like it is with Guinat's
+  cout << endl << ntot_pens0 << endl;
+  for (int rm=0;rm<n_r;++rm)  {
+    for (int dt=0;dt<deltaN1[rm].size();++dt)  {
+      cout << deltaN1[rm][dt] << " ";
+    }cout << endl;
+  }
+
+  cout << endl << ntot_pens1 << endl;
+  for (int rm=0;rm<n_r;++rm)  {
+    for (int dt=0;dt<deltaN2[rm].size();++dt)  {
+      cout << deltaN2[rm][dt] << " ";
+    }cout << endl;
+  }
+
+  cout << endl;
+  for (int rm=0;rm<n_r;++rm)  {
+    for (int dt=0;dt<deltaN[rm].size();++dt)  {
+      cout << deltaN[rm][dt] << " ";
+    }cout << endl;
+  }
 }
 
 
@@ -709,106 +742,61 @@ void Model::ns_calc(int i,std::vector<double>& ninfsum)  {
  * \return void
  */
 void Model::probinf_calc(std::vector<double>& prob_inf)  {
-  for (int rm=rooms.front();rm<=rooms.back();++rm)  { // know rooms are incremental. otw iterator.
-    int i_beg = rLst[rm].front();   // first animal index in this room
-    int i_end = rLst[rm].back();    // last animal index
-    vector<double> n_pen = {double(nroom1[rm]),double(nroom2[rm])};
+  // For each animal in this room - calculate probability of infection
+  for (int i=0;i<n_a;++i)  {
+    if (iTyp[i]>1)  {
+      vector<double> n_pen = {double(nroom1[rooms[i]]),double(nroom2[rooms[i]])};
+      vector<double> ninf_sum(bflags[rooms[i]],0.0);
+      ns_calc(i,ninf_sum);
 
-    // For each animal in this room - calculate probability of infection
-    for (int i=i_beg;i<=i_end;++i)  {
-      if (iTyp[i]<2)  { // So iTyp 0 or 1 - inoculated
-        prob_inf[i] = 1.0;
+      vector<double> ninf(bflags[rooms[i]],0.0);
+      if (id_ij[i]!=-1)  {
+        ni_calc(i,ninf);
       }
-      // Contact animals not nec infected, calc probs
-      else  {
-        // numbers of infectious in each pen when i is infected
-        vector<double> ninf(bflags[rooms[i]],0.0);
-        if (id_ij[i]!=-1)  { // Definitely infected - (tPos>=0)
-          ni_calc(i,ninf);
-        }
-        // Cumulative infectious time for all animals in pen until i is infected
-        // Need this whether or not i got infected
-        vector<double> ninf_sum(bflags[rooms[i]],0.0);
-        ns_calc(i,ninf_sum);
 
-        // Now calculate probability of infection at sampled tInf
-        if (bflags[rooms[i]]==1)  {  // No second pen
-          switch (iTyp[i])  {
-            case 2:
-              // Normal contact
-              if (tNeg[i]<0)  { // No transmission
-                prob_inf[i] =  exp(-(beta[0]*ninf_sum[0]/n_pen[0]));
-              }
-              else  {           // Transmission
-                prob_inf[i] = (beta[0]*ninf[0]/n_pen[0])
-                            *  exp(-(beta[0]*ninf_sum[0]/n_pen[0]));
-              }
-              break;
-
-            case 3:
-              cout << "WTF lhood - bflags==1 but have iTyp==3?!" << endl;
-              exit(-1);
-              break;
-
-            case 4:
-              // Within-pen contact
-              if (tNeg[i]<0)  { // No transmission
-                prob_inf[i] =  exp(-(beta[0]*ninf_sum[0]/n_pen[0]));
-              }
-              else  {           // Transmission
-                prob_inf[i] = (beta[0]*ninf[0]/n_pen[0])
-                            *  exp(-(beta[0]*ninf_sum[0]/n_pen[0]));
-              }
-              break;
-
-            default:
-              cout << "WTF" << endl;
-              exit(-1);
-              break;
-          }
-          if ((TEST_FLAG)&&(prob_inf[i]==0.0))  {
-            if(TEST_FLAG==2)cout << i << " " << ninf[0] << " " << ninf_sum[0] << endl;
-          }
+      if (bflags[rooms[i]]==1)  {  // No second pen.
+        // Already guaranteed to be a contact
+        if (tNeg[i]<0)  {
+          prob_inf[i] =  exp(-(beta[0]*ninf_sum[0]/n_pen[0]));
         }
         else  {
-          // multiple pens (experiment - not individual rooms...)
-          switch (iTyp[i])  {
-            case 2:
-              // Within-pen contact
-              if (tNeg[i]<0)  { // No transmission
-                prob_inf[i] =  exp( -(beta[0]*ninf_sum[0]/n_pen[0] + beta[1]*ninf_sum[1]/(n_pen[0]+n_pen[1])) );
-              }
-              else  {           // Transmission
-                prob_inf[i] = (beta[0]*ninf[0]/n_pen[0] + beta[1]*ninf[1]/(n_pen[0]+n_pen[1]))
-                            *  exp(-(beta[0]*ninf_sum[0]/n_pen[0]+beta[1]*ninf_sum[1]/(n_pen[0]+n_pen[1])));
-              }
-              break;
-
-            case 3:
-              // Between-pen transmission
-              if (tNeg[i]<0)  { // Not infected contact
-                prob_inf[i] =  exp(-(beta[0]*ninf_sum[1]/n_pen[1]+beta[1]*ninf_sum[0]/(n_pen[0]+n_pen[1])));
-              }
-              else  { // Infected
-                prob_inf[i] = (beta[0]*ninf[1]/n_pen[1]+beta[1]*ninf[0]/(n_pen[0]+n_pen[1]))
-                            *  exp(-(beta[0]*ninf_sum[1]/n_pen[1]+beta[1]*ninf_sum[0]/(n_pen[0]+n_pen[1])));
-              }
-              //cout << " " << betaw*ninf[1]/n_pen[1] << "\t" << betab*ninf[0]/(n_pen[0]+n_pen[1]) << endl;
-              break;
-
-            case 4:
-              // Within-pen contact
-              cout << "WTF LHOOD - bflags==2 && iTyp==4 ie between pen transmission on Orsel C2 pig?" << endl;
-              exit(-1);
-              break;
-
-            default:
-              cout << "WTF" << endl;
-              exit(-1);
-              break;
-          }
+          prob_inf[i] = (beta[0]*ninf[0]/n_pen[0])
+                      *  exp(-(beta[0]*ninf_sum[0]/n_pen[0]));
         }
       }
+
+      else  {// multiple pens (experiment - not individual rooms...)
+        switch (iTyp[i])  {
+          case 2: // Within-pen contact
+            if (tNeg[i]<0)  { // No transmission
+              prob_inf[i] =  exp( -(beta[0]*ninf_sum[0]/n_pen[0] + beta[1]*ninf_sum[1]/(n_pen[0]+n_pen[1])) );
+            }
+            else  {           // Transmission
+              prob_inf[i] = (beta[0]*ninf[0]/n_pen[0] + beta[1]*ninf[1]/(n_pen[0]+n_pen[1]))
+                          *  exp(-(beta[0]*ninf_sum[0]/n_pen[0]+beta[1]*ninf_sum[1]/(n_pen[0]+n_pen[1])));
+            }
+            break;
+
+          case 3:   // Between-pen transmission
+            if (tNeg[i]<0)  { // Not infected contact
+              prob_inf[i] =  exp(-(beta[0]*ninf_sum[1]/n_pen[1]+beta[1]*ninf_sum[0]/(n_pen[0]+n_pen[1])));
+            }
+            else  { // Infected
+              prob_inf[i] = (beta[0]*ninf[1]/n_pen[1]+beta[1]*ninf[0]/(n_pen[0]+n_pen[1]))
+                          *  exp(-(beta[0]*ninf_sum[1]/n_pen[1]+beta[1]*ninf_sum[0]/(n_pen[0]+n_pen[1])));
+            }
+            break;
+
+          default:
+            cout << "probinf_calc - have 2 pens but not iTyp 2 or 3" << endl;
+            exit(-1);
+            break;
+        }
+      }
+    }
+    else  {
+      // Not contact!
+      prob_inf[i] = 1.0;
     }
   }
 }
@@ -825,7 +813,11 @@ double Model::lhood_calc()  {
   double loglik = 0.0;
   // Get probabilities of infection for all contacts
   vector<double> prob_inf(n_a,0.0);
-  probinf_calc(prob_inf);
+  //probinf_calc(prob_inf);
+  //vector<double> prob_inf2(n_a,0.0);
+  probinf_calc2(prob_inf);
+
+
   //Contributions from infection times for contact transmissionsn
   for (int i=0;i<n_a;++i)  {  // prob_inf already handles if transmission occurs or not
     if (pflags[rooms[i]])  // FIXME EXP2 HACK - ITYP>2
@@ -925,4 +917,132 @@ void Model::closefiles()  {
   out_ipd.close();
   out_lhd.close();
   out_brn.close();
+}
+
+
+
+
+/** \brief Integrating I(t)/N(t) for t=[0,tInf ? tEnd]
+ * For infected i, integrates up to t=tInf. Non-infected sums to t=tEnd
+ * Discretised by wheverever N changes. But only caught in each room...
+ * \param i int
+ * \return vector<double>
+ *//*
+void Model::ns_calc2(int i,std::vector<double>& ninfsum)  {
+  double iS = (tNeg[i]<0) ? tEnd[i] : tInf[i];
+  int room = rooms[i];
+  for (int asd=0;asd<deltaN[room].size()-1;++asd)  {
+    double tau1 = deltaN[room][asd];
+    double tau2 = deltaN[room][asd+1];
+    double iStop = min(tau2,iS);//(tNeg[i]==-1) ? tEnd[i] : tInf[i];
+    for (auto jit=rLst[room].begin();jit!=rLst[room].end();++jit)  {
+      int j = *jit; // animal id for each in this room
+      if ((tNeg[j]<0)||(i==j))  {
+        // j was never infected, no contribution. and i can't infect itself...
+        continue;
+      }
+      else  {
+        double ijStop = min(iStop,double(tEnd[j]));
+        double iStart = max(tau1,tInf[j]+lat_P[j]);
+        (iTyp[j]==3) ? ninfsum[1] += max(ijStop-iStart,0.0)/double(ntot_pens0(room,floor(tau1)))
+                     : ninfsum[0] += max(ijStop-iStart,0.0)/double(ntot_pens0(room,floor(tau1)));
+      }
+    }
+  }
+}*/
+
+
+void Model::ns_calc2(int i,std::vector<double>& ninfsum)  {
+  double iS = (tNeg[i]<0) ? tEnd[i] : tInf[i];
+  int room = rooms[i];
+  for (int asd=0;asd<deltaN[room].size()-1;++asd)  {
+    double tau1 = deltaN[room][asd];
+    double tau2 = deltaN[room][asd+1];
+    double iStop = min(tau2,iS);//(tNeg[i]==-1) ? tEnd[i] : tInf[i];
+    for (auto jit=rLst[room].begin();jit!=rLst[room].end();++jit)  {
+      int j = *jit; // animal id for each in this room
+      if ((tNeg[j]<0)||(i==j))  {
+        // j was never infected, no contribution. and i can't infect itself...
+        continue;
+      }
+      else  {
+        double ijStop = min(iStop,double(tEnd[j]));
+        double iStart = max(tau1,tInf[j]+lat_P[j]);
+
+        if (bflags[room]==1)  {
+          ninfsum[0] += max(ijStop-iStart,0.0)/double(ntot_pens0(room,floor(tau1)));
+        }
+        else  {
+          if (iTyp[i]==3)  {
+            /* Second pen being infected by... */
+            if (iTyp[j]==3)  {  // Same pen
+              ninfsum[0] += max(ijStop-iStart,0.0)/double(ntot_pens1(room,floor(tau1)));
+            }
+            else  {             // Other pen
+              ninfsum[1] += max(ijStop-iStart,0.0)/double(ntot_pens0(room,floor(tau1))+ntot_pens1(room,floor(tau1)));
+            }
+          }
+          else  {
+            /* First pen (inocs and C1) being infected by... */
+            if (iTyp[j]==3)  {  // Other pen
+              ninfsum[1] += max(ijStop-iStart,0.0)/double(ntot_pens0(room,floor(tau1)));
+            }
+            else  {             // Same pen
+              ninfsum[0] += max(ijStop-iStart,0.0)/double(ntot_pens0(room,floor(tau1)));
+            }
+          }
+        }
+      }
+    }
+    if (tau2>iS)
+      break;
+  }
+}
+
+void Model::probinf_calc2(std::vector<double>& prob_inf)  {
+  // For each animal in this room - calculate probability of infection
+  for (int i=0;i<n_a;++i)  {
+    if (iTyp[i]>1)  {
+      vector<double> n_pen = {double(nroom1[rooms[i]]),double(nroom2[rooms[i]])};
+      vector<double> ninf_sum(bflags[rooms[i]],0.0);
+      ns_calc2(i,ninf_sum);
+      vector<double> ninf(bflags[rooms[i]],0.0);
+
+      if (id_ij[i]!=-1)  {
+        ni_calc(i,ninf);
+      }
+      if (bflags[rooms[i]]==1)  {  // No second pen.
+        // Already guaranteed to be a contact
+        if (tNeg[i]<0)  {
+          prob_inf[i] =  exp(-(beta[0]*ninf_sum[0]));
+        }
+        else  {
+          prob_inf[i] = (beta[0]*ninf[0]/ntot_pens0(rooms[i],floor(tInf[i])))
+                      *  exp(-(beta[0]*ninf_sum[0]));
+        }
+      }
+      else  {
+        switch(iTyp[i])  {
+          case 2:
+            prob_inf[i] = (beta[0]*ninf[0]/ntot_pens0(rooms[i],floor(tInf[i]))
+                          +beta[1]*ninf[1]/(ntot_pens0(rooms[i],floor(tInf[i]))+ntot_pens1(rooms[i],floor(tInf[i]))))
+                        *  exp(-(beta[0]*ninf_sum[0]+beta[1]*ninf_sum[1]));
+            break;
+          case 3:
+            prob_inf[i] = (beta[0]*ninf[1]/ntot_pens1(rooms[i],floor(tInf[i]))
+                          +beta[1]*ninf[0]/(ntot_pens0(rooms[i],floor(tInf[i]))+ntot_pens1(rooms[i],floor(tInf[i]))))
+                        *  exp(-(beta[0]*ninf_sum[0]+beta[1]*ninf_sum[1]));
+            break;
+          default:
+            cout << "asdfg" << endl;
+            exit(-1);
+            break;
+        }
+      }
+    }
+    else  {
+      // Not contact!
+      prob_inf[i] = 1.0;
+    }
+  }
 }
