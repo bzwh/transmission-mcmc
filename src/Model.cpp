@@ -58,7 +58,7 @@ void Model::setup(int cno,int mf,int df)  {
 
 
 void Model::setfns(int cno,int df)  {
-  const int species_flag = 2;
+  const int species_flag = 3;
   switch (species_flag)  {
     case 0:
       dname = "./input/fmd-sheep/ChallengeData_sheep.txt";
@@ -67,8 +67,8 @@ void Model::setfns(int cno,int df)  {
       break;
 
     case 1:
-      //dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
-      dname = "./input/fmd-pigs/exp2-challenge_only.txt";
+      dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
+      //dname = "./input/fmd-pigs/exp2-challenge_only.txt";
       //dname = "./input/fmd-pigs/combined.txt";
       //dname = "./input/fmd-pigs/ChallengeDataPigs-combined.txt";
       pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
@@ -81,6 +81,13 @@ void Model::setfns(int cno,int df)  {
       opath = "./outputs/asf_pigs/";
       orsel_delay = 0.0;
       break;
+
+    case 3:
+      dname = "./input/vacc-pigs/ChallengeDataPigsVacc.txt";
+      pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
+      opath = "./outputs/vacc_pigs/";
+      break;
+
 
     default:
       cout << "Wtf are you running?" << endl;
@@ -167,7 +174,7 @@ void Model::load_data()  {
     if (cflags[room])  {
       for (unsigned int aid=0;aid<rLst[room].size();++aid)  {
         int animalid = rLst[room][aid];
-        if (iTyp[animalid]==2)  {
+        if ((iTyp[animalid]==2)&&(tNeg[animalid]>=0))  {
           tMove[room] = min(tMove[room],double(tPos[animalid]));
         }
       }
@@ -927,31 +934,7 @@ void Model::closefiles()  {
  * Discretised by wheverever N changes. But only caught in each room...
  * \param i int
  * \return vector<double>
- *//*
-void Model::ns_calc2(int i,std::vector<double>& ninfsum)  {
-  double iS = (tNeg[i]<0) ? tEnd[i] : tInf[i];
-  int room = rooms[i];
-  for (int asd=0;asd<deltaN[room].size()-1;++asd)  {
-    double tau1 = deltaN[room][asd];
-    double tau2 = deltaN[room][asd+1];
-    double iStop = min(tau2,iS);//(tNeg[i]==-1) ? tEnd[i] : tInf[i];
-    for (auto jit=rLst[room].begin();jit!=rLst[room].end();++jit)  {
-      int j = *jit; // animal id for each in this room
-      if ((tNeg[j]<0)||(i==j))  {
-        // j was never infected, no contribution. and i can't infect itself...
-        continue;
-      }
-      else  {
-        double ijStop = min(iStop,double(tEnd[j]));
-        double iStart = max(tau1,tInf[j]+lat_P[j]);
-        (iTyp[j]==3) ? ninfsum[1] += max(ijStop-iStart,0.0)/double(ntot_pens0(room,floor(tau1)))
-                     : ninfsum[0] += max(ijStop-iStart,0.0)/double(ntot_pens0(room,floor(tau1)));
-      }
-    }
-  }
-}*/
-
-
+ */
 void Model::ns_calc2(int i,std::vector<double>& ninfsum)  {
   double iS = (tNeg[i]<0) ? tEnd[i] : tInf[i];
   int room = rooms[i];
