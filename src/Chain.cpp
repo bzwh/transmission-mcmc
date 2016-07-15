@@ -106,10 +106,10 @@ void Chain::run()  {
       out_cov << cov/sd << "\n\n" << flush;
       model.out_brn.close();
     }
-    logstream << "Chain: " << cno << "-" << to_string((long long) (i+1)) << "\t"
+    logstream << "Chain: " << cno << "-" << to_string((long long) (i)) << "\t"
               << sd << "\t" << arate*100.0 << "%\t " << arate2*100 << "%\t "
               << accpd << " " << prior_new << "\t" << lhood_new << "\t";
-    if (i%1000==0)  {
+    if (i%10000==0)  {
       logdmp << logstream.str() << "\n";
     }
   }

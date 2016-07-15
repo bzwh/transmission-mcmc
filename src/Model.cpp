@@ -15,7 +15,6 @@
 #define TEST_FLAG 1
 #define BETAHACK 1
 
-
 const double EPSILON = std::numeric_limits<double>::epsilon();
 
 using namespace Eigen;
@@ -58,7 +57,7 @@ void Model::setup(int cno,int mf,int df)  {
 
 
 void Model::setfns(int cno,int df)  {
-  const int species_flag = 3;
+  const int species_flag = 1;
   switch (species_flag)  {
     case 0:
       dname = "./input/fmd-sheep/ChallengeData_sheep.txt";
@@ -67,9 +66,9 @@ void Model::setfns(int cno,int df)  {
       break;
 
     case 1:
-      dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
+      //dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
       //dname = "./input/fmd-pigs/exp2-challenge_only.txt";
-      //dname = "./input/fmd-pigs/combined.txt";
+      dname = "./input/fmd-pigs/combined.txt";
       //dname = "./input/fmd-pigs/ChallengeDataPigs-combined.txt";
       pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
       opath = "./outputs/fmd_pigs/";
@@ -88,6 +87,11 @@ void Model::setfns(int cno,int df)  {
       opath = "./outputs/vacc_pigs/";
       break;
 
+    case 4:
+      dname = "./input/eble-pigs/eble06-pigs.txt";
+      pname = "./input/eble-pigs/priors_fmdv_pigs.txt";
+      opath = "./outputs/eble_pigs/";
+      break;
 
     default:
       cout << "Wtf are you running?" << endl;
@@ -208,13 +212,17 @@ void Model::ncount()  {
  for(int rm=0;rm<n_r;++rm)  {
     ntot_pens0.row(rm).fill(nroom1[rm]);
     ntot_pens1.row(rm).fill(nroom2[rm]);
+    if(cflags[rm]==1)  {
+      ntot_pens0.block(rm,0,1,tMove[rm]).array() -= 5;
+    }
   }
-  for (int t=1;t<exend+1;++t)  {
+  for (int t=1;t<exend+1;++t)  { // FIXME FIXME FIXME
     for (int i=0;i<n_a;++i)  {
-      if ((cull[i])&&(tEnd[i]<exend))  {
-        if (t>=tEnd[i])
-        (iTyp[i]>2) ? ntot_pens1(rooms[i],t) -= 1.0
-                    : ntot_pens0(rooms[i],t) -= 1.0;
+      if ((cull[i])&&(tEnd[i]<exend))  {  // Culled (not just censored)
+        if (t>=tEnd[i])  {
+          (iTyp[i]>2) ? ntot_pens1(rooms[i],t) -= 1.0
+                      : ntot_pens0(rooms[i],t) -= 1.0;
+        }
       }
     }
   }
@@ -315,26 +323,14 @@ void Model::load_priors()  {
 VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  {
   int init_counter = 0;
   int give_up = 10000; // Really shouldn't struggle this bad
-  // FIXME hardcoded... wide enough for all data sets?
-  // Uniform bounds on initial infection times
-  /*vector<double> shp_l = {0.0,25.0};
-  vector<double> mue_l = {0.0,10.0};
-  vector<double> shp_i = {0.0,25.0};
-  vector<double> mue_i = {0.0,15.0};
-  vector<double> bt = {0.0,25.0};      // uniform bounds on transmission parameter parameters
-  */
+  // TODO hardcoded... wide enough for all data sets?
   vector<double> shp_l = {0.0,5.0};
   vector<double> mue_l = {0.0,2.0};
-  vector<double> shp_i = {0.0,5.0};
-  vector<double> mue_i = {0.0,5.0};
-  vector<double> bt = {0.0,5.0};
-  /*vector<double> shp_l = {0.0,2.5};
-  vector<double> mue_l = {0.0,2.5};
-  vector<double> shp_i = {0.0,5.0};
+  vector<double> shp_i = {0.0,10.0};
   vector<double> mue_i = {0.0,10.0};
-  vector<double> bt = {0.0,10.0};      // uniform bounds on transmission parameter parameters. shouldnt be the same...
-*/
-  // FIXME Shouldn't initialise storage - move to setup. Keep purely for chain.
+  vector<double> bt = {0.0,10.0};
+
+  // TODO Probably shouldn't initialise storage - move to setup. Keep purely for chain.
   // Nuisance parameter storage
   tInf = VectorXd::Zero(n_a);     // Infection times
   tinfS = VectorXd::Zero(n_ti);
@@ -384,7 +380,6 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
             case 2:
               // Contact transmission (pen1)
               tInf[i] = gsl_ran_flat(r,orsel_delay,tPos[i]);  // [SG]
-              //tInf[i] = orsel_delay+gsl_rng_uniform(r)*(5.0);
               tinfS[it_tinf++] = tInf[i];
             break;
 
@@ -870,19 +865,18 @@ double Model::lhood_calc()  {
   }
 
   // Contributions from infectious periods - potentially censored & definitely binned
-  for (auto iit=id_allinf.begin();iit!=id_allinf.end();++iit)  {
-    int i = *iit;
+  /* Extract infectious periods */
+  for (int j=0;j<n_ii;++j)  {
+    int i = id_allinf[j];
     switch (cull[i])  {
       case 0:
-        // Binned - tEnd is last positive. infectiousness bounded < tEnd+1 (first negative)
-        loglik += log(gsl_cdf_gamma_P(inf_p[id_ij[i]]+1.0,pinf[0],pinf[1]/pinf[0])  //+1.0 is for daily sampling!
-                     -gsl_cdf_gamma_P(inf_p[id_ij[i]],pinf[0],pinf[1]/pinf[0]));
+        loglik += log( gsl_cdf_gamma_P(inf_p[j]+1.0,pinf[0],pinf[1]/pinf[0])
+                      -gsl_cdf_gamma_P(inf_p[j],pinf[0],pinf[1]/pinf[0]));
         break;
       case 1:
-        loglik += log(1.0-gsl_cdf_gamma_P(inf_p[id_ij[i]],pinf[0],pinf[1]/pinf[0]));
+        loglik += log(gsl_cdf_gamma_Q(inf_p[j],pinf[0],pinf[1]/pinf[0]));
         break;
       default:
-        // Should not happen!!
         cout << "LHOOD - cull status not zero or one WTF?" << endl;
         exit(-1);
         break;
@@ -910,7 +904,7 @@ void Model::write(VectorXd pars,double logprr,double loglik)  {
   // FIXME perr_flag does not correspond to the dumped prior and likelihood yet
   out_lhd << logprr<< "\t" << loglik<< "\t" << perr_flag << "\t" << lerr_flag << "\n";
   // infectious periods, well, sort of. Not inferred, just tEnd-latp-tInf
-  out_ipd << inf_p.transpose() << "\n";
+  //out_ipd << inf_p.transpose() << "\n";
 }
 
 
