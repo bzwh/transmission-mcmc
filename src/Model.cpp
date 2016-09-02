@@ -53,61 +53,91 @@ void Model::setup(int cno,int mf,int df)  {
   setfns(cno,df);
   load_data();
   load_priors();
+  // TODO Probably shouldn't initialise storage - move to setup. Keep purely for chain.
+  // Nuisance parameter storage
+  tInf = VectorXd::Zero(n_a);     // Infection times
+  tinfS = VectorXd::Zero(n_ti);
+  lat_P = VectorXd::Zero(n_a);    // Latent period duration
+  lat_pS = VectorXd::Zero(n_ii);
+  inf_p = VectorXd::Zero(n_ii);   // Infectious period duration
+  // Model parameters storage
+  plat = VectorXd::Zero(mflag);   // Gamma latent
+  pinf = VectorXd::Zero(2);       // Gamma infectious
+  beta = VectorXd::Zero(bflag);   // Transmission
+
+  parsamp = VectorXd::Zero(npar);
 }
 
 
 void Model::setfns(int cno,int df)  {
-  const int species_flag = 1;
-  switch (species_flag)  {
-    case 0:
-      dname = "./input/fmd-sheep/ChallengeData_sheep.txt";
-      pname = "./input/fmd-sheep/priors_fmdsheep.txt";
-      opath = "./outputs/fmd_sheep/";
-      break;
+  if (df<10)  {
+    const int species_flag = 3;
+    switch (species_flag)  {
+      case 0:
+        dname = "./input/fmd-sheep/ChallengeData_sheep.txt";
+        pname = "./input/fmd-sheep/priors_fmdsheep.txt";
+        opath = "./outputs/fmd_sheep/";
+        break;
 
-    case 1:
-      //dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
-      //dname = "./input/fmd-pigs/exp2-challenge_only.txt";
-      dname = "./input/fmd-pigs/combined.txt";
-      //dname = "./input/fmd-pigs/ChallengeDataPigs-combined.txt";
-      pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
-      opath = "./outputs/fmd_pigs/";
-      break;
+      case 1:
+        //dname = "./input/fmd-pigs/ChallengeDataPigs-exp1.txt";
+        //dname = "./input/fmd-pigs/exp2-challenge_only.txt";
+        dname = "./input/fmd-pigs/combined.txt";
+        //dname = "./input/fmd-pigs/ChallengeDataPigs-combined.txt";
+        pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
+        opath = "./outputs/fmd_pigs/";
+        break;
 
-    case 2:
-      dname = "./input/asf-ppc/ASFVChallengeData.txt";
-      pname = "./input/asf-ppc/priors_asf.txt";
-      opath = "./outputs/asf_pigs/";
+      case 2:
+        dname = "./input/asf-ppc/ASFVChallengeData.txt";
+        pname = "./input/asf-ppc/priors_asf.txt";
+        opath = "./outputs/asf_pigs/";
+        orsel_delay = 0.0;
+        break;
+
+      case 3:
+        dname = "./input/vacc-pigs/ChallengeDataPigsVacc.txt";
+        pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
+        opath = "./outputs/vacc_pigs/";
+        break;
+
+      case 4:
+        dname = "./input/eble-pigs/eble06-pigs.txt";
+        pname = "./input/eble-pigs/priors_fmdv_pigs.txt";
+        opath = "./outputs/eble_pigs/";
+        break;
+
+      default:
+        cout << "Wtf are you running?" << endl;
+        exit(-1);
+        break;
+    }
+  }
+  else  {
+    if(1)  {
+      dname = "./input/synth-fmd/synth_"+to_string(df)+".txt";
+      pname = "./input/synth-fmd/priors.txt";
+      opath = "./outputs/synth-fmd/";
+    }
+    else  {
+      dname = "./input/synth-asf/synth_"+to_string(df)+".txt";
+      pname = "./input/synth-asf/priors.txt";
+      opath = "./outputs/synth-asf/";
       orsel_delay = 0.0;
-      break;
-
-    case 3:
-      dname = "./input/vacc-pigs/ChallengeDataPigsVacc.txt";
-      pname = "./input/fmd-pigs/priors_fmdv_pigs.txt";
-      opath = "./outputs/vacc_pigs/";
-      break;
-
-    case 4:
-      dname = "./input/eble-pigs/eble06-pigs.txt";
-      pname = "./input/eble-pigs/priors_fmdv_pigs.txt";
-      opath = "./outputs/eble_pigs/";
-      break;
-
-    default:
-      cout << "Wtf are you running?" << endl;
-      exit(-1);
-      break;
+    }
   }
 
-  out_par.open(opath+"par_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt");  // parameters
-  out_lat.open(opath+"latp_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt");  // latent periods
-  out_inf.open(opath+"tinf_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt"); // infection times
-  out_ipd.open(opath+"infp_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt"); // infectious periods
-  out_lhd.open(opath+"lhd_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt");  // likelihoods
-  out_brn.open(opath+"brn_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt");  // likelihoods
-  if (!out_par.is_open() || !out_lat.is_open() || !out_inf.is_open() || !out_ipd.is_open())  {
-    cout << "Output file error. Check paths" << endl;
-    exit(-1);
+  if (df!=-1)  {
+    out_par.open(opath+"par_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt");  // parameters
+    out_lat.open(opath+"latp_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt");  // latent periods
+    out_inf.open(opath+"tinf_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt"); // infection times
+    //out_ipd.open(opath+"infp_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt"); // infectious periods
+    out_lhd.open(opath+"lhd_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt");  // likelihoods
+    out_brn.open(opath+"brn_"+to_string((long long)df) + "_" + to_string((long long)cno)+".txt");  // likelihoods
+    if (!out_par.is_open() || !out_lat.is_open() || !out_inf.is_open())  {
+      cout << "Output file error. Check paths" << endl;
+      exit(-1);
+    }
   }
 
 }
@@ -244,25 +274,27 @@ void Model::ncount()  {
   }
 
   // FIXME Orsel's pigs not tested on cull date. tEnd is not tCull like it is with Guinat's
-  cout << endl << ntot_pens0 << endl;
-  for (int rm=0;rm<n_r;++rm)  {
-    for (int dt=0;dt<deltaN1[rm].size();++dt)  {
-      cout << deltaN1[rm][dt] << " ";
-    }cout << endl;
-  }
+  if (TEST_FLAG==2)  {
+    cout << endl << ntot_pens0 << endl;
+    for (int rm=0;rm<n_r;++rm)  {
+      for (int dt=0;dt<deltaN1[rm].size();++dt)  {
+        cout << deltaN1[rm][dt] << " ";
+      }cout << endl;
+    }
 
-  cout << endl << ntot_pens1 << endl;
-  for (int rm=0;rm<n_r;++rm)  {
-    for (int dt=0;dt<deltaN2[rm].size();++dt)  {
-      cout << deltaN2[rm][dt] << " ";
-    }cout << endl;
-  }
+    cout << endl << ntot_pens1 << endl;
+    for (int rm=0;rm<n_r;++rm)  {
+      for (int dt=0;dt<deltaN2[rm].size();++dt)  {
+        cout << deltaN2[rm][dt] << " ";
+      }cout << endl;
+    }
 
-  cout << endl;
-  for (int rm=0;rm<n_r;++rm)  {
-    for (int dt=0;dt<deltaN[rm].size();++dt)  {
-      cout << deltaN[rm][dt] << " ";
-    }cout << endl;
+    cout << endl;
+    for (int rm=0;rm<n_r;++rm)  {
+      for (int dt=0;dt<deltaN[rm].size();++dt)  {
+        cout << deltaN[rm][dt] << " ";
+      }cout << endl;
+    }
   }
 }
 
@@ -330,19 +362,7 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
   vector<double> mue_i = {0.0,10.0};
   vector<double> bt = {0.0,10.0};
 
-  // TODO Probably shouldn't initialise storage - move to setup. Keep purely for chain.
-  // Nuisance parameter storage
-  tInf = VectorXd::Zero(n_a);     // Infection times
-  tinfS = VectorXd::Zero(n_ti);
-  lat_P = VectorXd::Zero(n_a);    // Latent period duration
-  lat_pS = VectorXd::Zero(n_ii);
-  inf_p = VectorXd::Zero(n_ii);   // Infectious period duration
-  // Model parameters storage
-  plat = VectorXd::Zero(mflag);   // Gamma latent
-  pinf = VectorXd::Zero(2);       // Gamma infectious
-  beta = VectorXd::Zero(bflag);   // Transmission
 
-  parsamp = VectorXd::Zero(npar);
   loglik = std::numeric_limits<double>::infinity();
   logprr = std::numeric_limits<double>::infinity();
   while (isinf(loglik))  {
@@ -415,7 +435,8 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
               exit(-1);
               break;
             case 1:
-              lat_P[i] = gsl_rng_uniform(r)*(tPos[i]);
+              //lat_P[i] = gsl_rng_uniform(r)*(tPos[i]);
+              lat_P[i] = gsl_ran_flat(r,tNeg[i],tPos[i]);
               lat_pS[it_lat++] = lat_P[i];
               break;
             default:
@@ -489,7 +510,7 @@ VectorXd Model::init_samp(gsl_rng* r,double& logprr,double& loglik,int& ready)  
   }
   if (TEST_FLAG)  {
     stringstream lstream;
-    lstream <<"INIT " << omp_get_thread_num() << "- samp gen'd in: "<<init_counter<<"\n";
+    //lstream <<"INIT " << omp_get_thread_num() << "- samp gen'd in: "<<init_counter<<"\n";
     cout << lstream.str() << flush;
   }
   ready = 1;
@@ -915,7 +936,7 @@ void Model::closefiles()  {
   out_par.close();
   out_lat.close();
   out_inf.close();
-  out_ipd.close();
+  //out_ipd.close();
   out_lhd.close();
   out_brn.close();
 }
