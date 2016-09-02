@@ -122,7 +122,6 @@ void Chain::run()  {
 }
 
 
-
 /** \brief Generate new set of parameters.
  *  Applying scale factor to empirical cov matrix
  *  Generate new proposal using Eigen and GSL
@@ -136,7 +135,7 @@ void Chain::gen(int n)  {  // FIXME separate the non-infecteds too
   }
   else  {
     // Now using empirical cov matrix
-    cov_prop = sd*(cov+0.001*MatrixXd::Identity(npar,npar));
+    cov_prop = sd*(cov+1.0e-3*MatrixXd::Identity(npar,npar));
   }
   // Generation - gsl providing ugaussian samples, eigen making multinormal
   par_new = par_old+mgen(cov_prop,r);   // multivariate normal proposal

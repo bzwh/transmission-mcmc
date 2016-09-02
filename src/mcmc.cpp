@@ -22,7 +22,7 @@ int main(int argc, char* argv[])  {
   const int nchain = 4;       // num parallel chains
   const int n_samp = 1e7;       // samples
   const int n_burn = 1e7;       // burn in
-  const int n_thin = 1e3;       // thinning
+  const int n_thin = 1e4;       // thinning
   const int lflag = 1;        // log to screen
   for (int dflag=df1;dflag<df2;++dflag)  {        // id of experiment to fit
     #pragma omp parallel num_threads(nchain)
@@ -39,6 +39,8 @@ int main(int argc, char* argv[])  {
       else  {
         #pragma omp single
         {
+          logstream << "nA:" << chain.model.n_a << "\tnC:" << chain.model.n_c;
+          logstream << "\tnL:" << chain.model.n_l << "\tnI:" << chain.model.n_ti << "\n";
           for (int rms=0;rms<chain.model.n_r;++rms)  {
             logstream << "Room" << rms << ": B" << chain.model.bflags[rms] << " C" << chain.model.cflags[rms] << " P" << chain.model.pflags[rms] << "\n";
           }
